@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import { actionItemClick } from "@/store/slice/menuSlice";
-import styles from "./index.module.css";
 import { MENU_ITEMS } from "@/utils/constant";
+import { socket } from "@/socket";
 
 const Board = () => {
   const dispatch = useDispatch();
@@ -17,7 +17,6 @@ const Board = () => {
   );
 
   useLayoutEffect(() => {
-    console.log("inside use effect");
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width = document.documentElement.clientWidth;
@@ -29,10 +28,12 @@ const Board = () => {
     const handleMouseDown = (e) => {
       shouldDraw.current = true;
       beginPath(context, e.clientX, e.clientY);
+      socket.emit("beginPath", { x: e.clientX, y: e.clientY });
     };
     const handleMouseMove = (e) => {
       if (!shouldDraw.current) return;
       drawLine(context, e.clientX, e.clientY);
+      socket.emit("drawLine", { x: e.clientX, y: e.clientY });
     };
     const handleMouseUp = (e) => {
       shouldDraw.current = false;
@@ -45,14 +46,25 @@ const Board = () => {
       drawHistory.current.push(canvasData);
       drawHistoryPointer.current = drawHistory.current.length - 1;
     };
+    const handleSocketBeginPath = (path) => {
+      beginPath(context, path.x, path.y);
+    };
+    const handleSocketDrawLine = (path) => {
+      drawLine(context, path.x, path.y);
+    };
+
     canvas.addEventListener("mousedown", handleMouseDown);
     canvas.addEventListener("mousemove", handleMouseMove);
     canvas.addEventListener("mouseup", handleMouseUp);
+    socket.on("beginPath", handleSocketBeginPath);
+    socket.on("drawLine", handleSocketDrawLine);
 
     return () => {
       canvas.removeEventListener("onMouseDown", handleMouseDown);
       canvas.removeEventListener("onMouseMove", handleMouseMove);
       canvas.removeEventListener("onMouseUp", handleMouseUp);
+      socket.off("beginPath", handleSocketBeginPath);
+      socket.off("drawLine", handleSocketDrawLine);
     };
   }, []);
 
@@ -61,11 +73,20 @@ const Board = () => {
     if (!canvas) return;
     const context = canvas.getContext("2d");
 
-    const changeConfig = () => {
-      context.strokeStyle = color;
-      context.lineWidth = brushSize;
+    const changeConfig = (newColor, newBrushSize) => {
+      context.strokeStyle = newColor;
+      context.lineWidth = newBrushSize;
     };
-    changeConfig();
+    const handleSocketChangeConfig = (config) => {
+      console.log("config", config);
+      changeConfig(config.color, config.brushSize);
+    };
+    changeConfig(color, brushSize);
+    socket.on("configChange", handleSocketChangeConfig);
+
+    return () => {
+      socket.off("configChange", handleSocketChangeConfig);
+    };
   }, [color, brushSize]);
 
   useEffect(() => {
@@ -111,6 +132,10 @@ const Board = () => {
     context.lineTo(x, y);
     context.stroke();
   };
+
+  socket.on("connect", () => {
+    console.log("Socket Client Connected");
+  });
   return <canvas ref={canvasRef}></canvas>;
 };
 
